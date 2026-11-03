@@ -80,9 +80,11 @@ def make_pdf(pallets):
             raise ValueError('El máximo es 14 productos por pallet.')
         for _ in range(4):
             label(54.4, 73, 'From:')
-            label(310.7, 73, os.environ.get('SENDER_PHONE', ''), width=245)
-            for top, name in [(100,'SENDER_NAME'),(127,'SENDER_ADDRESS'),(153,'SENDER_CITY')]:
-                label(54.4, top, os.environ.get(name, ''))
+            label(310.7, 73, '(619) 661-5592', width=245)
+            for top, value in [(100, 'FLORAL TREASURE C/O AM WAREHOUSE'),
+                               (127, '8851 kern st suite 200'),
+                               (153, 'San Diego, CA, 92154')]:
+                label(54.4, top, value)
             label(54.4, 191, 'SHIP TO:')
             pdf.line(54.4, 598, 142, 598)
             destination = pallet['destination'].splitlines()

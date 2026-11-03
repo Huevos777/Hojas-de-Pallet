@@ -30,7 +30,8 @@ Configura `APP_PASSWORD` en el entorno del proceso y ejecuta `.venv/bin/python a
 - Build Command: `pip install -r requirements.txt`
 - Start Command: `gunicorn app:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120`
 - Health Check: `/healthz`
-- Variables privadas: `APP_PASSWORD`, `SENDER_NAME`, `SENDER_ADDRESS`, `SENDER_CITY`, `SENDER_PHONE`.
+- Variable privada: `APP_PASSWORD`.
+- Remitente fijo autorizado por el usuario: FLORAL TREASURE C/O AM WAREHOUSE, 8851 kern st suite 200, San Diego, CA, 92154; (619) 661-5592. Ya no requiere variables `SENDER_*`.
 
 No guardar valores privados en GitHub. Render proporciona HTTPS. Las rutas de la aplicación se bloquean sin contraseña; `/healthz` es público y solo responde `ok`. Los datos se procesan en memoria, sin guardarse en disco ni en registros de aplicación. No se incluye ningún archivo original del usuario en GitHub. Los procesos deben reiniciarse después de restaurar un entorno.
 
