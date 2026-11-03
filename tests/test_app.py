@@ -38,6 +38,16 @@ class AppTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_payload(data)
 
+    def test_explicit_volume_or_calculation(self):
+        data = shipment()
+        data['pallets'][0]['cube'] = '70,5'
+        self.assertEqual(validate_payload(data)[0]['cube'], 70.5)
+        data['pallets'][0]['cube'] = ''
+        self.assertAlmostEqual(validate_payload(data)[0]['cube'], 68.8888889)
+        data['pallets'][0]['cube'] = 'nan'
+        with self.assertRaises(ValueError):
+            validate_payload(data)
+
     def test_reject_missing_weight_and_boxes(self):
         for key in ['weight', 'boxes']:
             data = shipment(); data['pallets'][0][key] = ''

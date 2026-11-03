@@ -4,13 +4,13 @@ Aplicación privada para pegar tablas o introducir manualmente productos ya sepa
 
 ## Uso
 
-1. Introduce PO y destino (hasta cuatro líneas).
-2. Pega una tabla con encabezados opcionales, selecciona su separador y relaciona las columnas. Acepta tabulaciones de Excel, CSV, punto y coma, barras verticales y columnas separadas por dos o más espacios. Los nombres de columna habituales se proponen automáticamente, pero deben revisarse.
-3. Importa los pallets y revisa productos, piezas, cajas, medidas en pulgadas y peso en libras. Se conservan las celdas de pallet vacías como continuación del anterior. Las cajas de las filas se suman: si el origen repite el total en cada fila, corrige el total antes de generar. No se infieren cajas a partir de piezas.
-4. También puedes crear, editar o eliminar pallets y productos manualmente.
+1. Escribe o pega en la cuadrícula con estas nueve columnas fijas, en este orden: Ship To, PO#, ITEM, Qty Pcs, # Boxes, Pallet #, Sizes, Cube Ft3, Weight (Lbs).
+2. Selecciona la celda inicial y pega un bloque de Excel con Ctrl+V. Admite encabezados opcionales en ese mismo orden y direcciones multilínea entre comillas como las copia Excel. También puedes editar cada celda, usar Tab y Enter, y agregar filas. Shift+Enter permite varias líneas en una celda.
+3. Pulsa «Revisar pallets de esta tabla». Ship To y PO# se trasladan al envío; las filas con Pallet # vacío continúan el anterior. Las cajas de las filas se suman: no repitas un total en cada producto. No se infieren cajas a partir de piezas. Se omiten filas vacías y filas ITEM = TOTAL.
+4. Revisa o corrige cada pallet. Aplicar la tabla otra vez reemplaza la revisión previa con confirmación. Cualquier cambio en las celdas exige volver a aplicar la tabla antes de generar. También puedes agregar pallets manualmente.
 5. Confirma la revisión y descarga el PDF. Imprime una sola copia: las cuatro ya están incluidas.
 
-No interpreta automáticamente texto libre arbitrario ni reparte productos entre pallets. Cuando la tabla no se puede identificar, usa la asignación de columnas o la entrada manual. Un envío por vez (un PO y un destino). Hasta 100 pallets y 14 productos por pallet; las listas largas usan texto más pequeño sin dividir la página. El volumen se calcula a partir de las tres dimensiones.
+Un envío por vez (un PO y un destino). Hasta 2000 filas en la cuadrícula, 100 pallets y 14 productos por pallet. Las medidas van en pulgadas y el peso en libras. Cube Ft3 se usa cuando lo escribes; si está vacío se calcula con las tres dimensiones. Las listas largas usan texto más pequeño sin dividir la página. Los datos no se conservan al recargar la página.
 
 ## Desarrollo
 

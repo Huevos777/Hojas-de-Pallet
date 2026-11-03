@@ -38,6 +38,8 @@ def validate_payload(data):
             raise ValueError(f'Pallet {index}: usa medidas como 40*48*62, en pulgadas.')
         dims = [number(x, 'medidas', True) for x in dims]
         cube = dims[0]*dims[1]*dims[2]/1728
+        if raw.get('cube') not in (None, ''):
+            cube = number(raw['cube'], f'volumen del pallet {index}', True)
         items = raw.get('items')
         if not isinstance(items, list) or not 1 <= len(items) <= 14:
             raise ValueError(f'Pallet {index}: agrega entre 1 y 14 productos.')
