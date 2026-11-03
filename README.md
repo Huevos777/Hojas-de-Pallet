@@ -6,7 +6,7 @@ Aplicación privada para pegar tablas o introducir manualmente productos ya sepa
 
 1. Completa destino (Ship To) y PO# una sola vez, arriba.
 2. Escribe o pega la tabla: ITEM, Qty Pcs, # Boxes, Pallet #, Sizes, Cube Ft3, Weight (Lbs). Admite encabezados opcionales de Excel, edición de celdas, Tab, Enter y filas adicionales.
-3. Deja Pallet # vacío para continuar el anterior. Escribe # Boxes en el primer producto de cada grupo de cajas. Las celdas de cajas vacías comparten automáticamente las del grupo anterior dentro del mismo pallet. Una nueva cantidad empieza otro grupo propio. El primer producto de cada pallet debe tener cajas; nunca se heredan desde otro pallet.
+3. Solo un número distinto en Pallet # empieza otro pallet. Si está vacío o repite el número actual, los productos siguen en el mismo pallet. Sizes, Weight y Cube vacíos conservan los datos de ese pallet; no se heredan datos desde un pallet distinto. Deja Pallet # vacío para continuar el anterior. Escribe # Boxes en el primer producto de cada grupo de cajas. Las celdas de cajas vacías comparten automáticamente las del grupo anterior dentro del mismo pallet. Una nueva cantidad empieza otro grupo propio. El primer producto de cada pallet debe tener cajas; nunca se heredan desde otro pallet.
 4. Pulsa «Descargar hojas de pallet». No hay revisión por pallet ni casilla de confirmación. Los datos se procesan directamente desde la tabla; los errores se indican sin generar un PDF incompleto.
 5. El PDF contiene una sola página por pallet. Selecciona cuatro copias al imprimir y desactiva «Intercalar» para obtener cuatro hojas juntas por pallet.
 
@@ -42,3 +42,5 @@ python3 -m unittest discover -s tests -v
 ```
 
 Se probó además el flujo de pegado, edición y descarga con Chromium/Playwright y la estructura del PDF con un lector PDF. Estas herramientas no son necesarias en producción.
+
+La pantalla incluye instrucciones paso a paso y un ejemplo de tres productos que comparten 18 cajas. Las pruebas de agrupación de la tabla usan Node si está disponible; no se requiere Node en producción.
