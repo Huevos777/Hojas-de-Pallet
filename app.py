@@ -4,99 +4,120 @@ import os
 import base64
 import hmac
 import binascii
-from xml.sax.saxutils import escape as xml_escape
 import re
-import openpyxl
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 
 
-def read_pallets(content):
-    workbook = openpyxl.load_workbook(BytesIO(content), data_only=True)
+def validate_payload(data):
+    import math
+    def text(value, label, limit=160):
+        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+            raise ValueError(f'Revisa {label}: es obligatorio y admite hasta {limit} caracteres.')
+        return value.strip()
+    def number(value, label, positive=False):
+        try:
+            result = float(str(value).replace(',', '.'))
+        except (ValueError, TypeError):
+            raise ValueError(f'Revisa {label}: debe ser un número.')
+        if not math.isfinite(result) or result < 0 or (positive and result == 0):
+            raise ValueError(f'Revisa {label}: debe ser un número válido mayor que cero.' if positive else f'Revisa {label}: no puede ser negativo.')
+        return result
+    if not isinstance(data, dict) or not isinstance(data.get('pallets'), list) or not 1 <= len(data['pallets']) <= 100:
+        raise ValueError('Agrega entre 1 y 100 pallets.')
+    destination = text(data.get('destination'), 'destino', 500)
+    if len(destination.splitlines()) > 4 or any(len(line) > 60 for line in destination.splitlines()):
+        raise ValueError('El destino admite hasta cuatro líneas de 60 caracteres.')
+    po = text(data.get('po'), 'PO', 40)
     pallets = []
-    for sheet in workbook:
-        if [sheet.cell(1, c).value for c in (1, 3, 4)] != ['PL', 'PO#', 'ITEM']:
-            raise ValueError('El archivo debe tener el mismo encabezado que Datos.xlsx: PL, Ship To, PO#, ITEM…')
-        current = None
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            row = tuple(row) + (None,) * max(0, 12-len(row))
-            if row[3] is None:
-                continue
-            if str(row[3]).strip().upper() == 'TOTAL':
-                continue
-            if row[6] is not None:
-                if not re.fullmatch(r'Pallet\s+\d+(?:\s+MIX)?', str(row[6]).strip(), re.I):
-                    raise ValueError('Número de pallet no reconocido: ' + str(row[6]))
-                current = dict(number=str(row[6]), destination=str(sheet['B2'].value or ''),
-                               po=str(sheet['C2'].value or ''), pl=str(sheet['A2'].value or ''),
-                               size=str(row[7] or ''), cube=row[8], weight=row[9], items=[], boxes=0)
-                pallets.append(current)
-            if row[3] is None:
-                continue
-            if current is None:
-                raise ValueError('Hay productos sin un pallet asignado.')
-            if not isinstance(row[4], (int, float)) or row[4] < 0:
-                raise ValueError('La cantidad de piezas debe ser un número positivo.')
-            if row[5] is not None and (not isinstance(row[5], (int, float)) or row[5] < 0):
-                raise ValueError('La cantidad de cajas debe ser un número positivo.')
-            current['items'].append((str(row[3]), row[4], row[5]))
-            current['boxes'] += row[5] or 0
-    if not pallets:
-        raise ValueError('No se encontraron pallets en el archivo.')
+    for index, raw in enumerate(data['pallets'], 1):
+        if not isinstance(raw, dict):
+            raise ValueError('Revisa los datos del pallet.')
+        size = text(raw.get('size'), f'medidas del pallet {index}', 40)
+        dims = re.split(r'[*xX×]', size)
+        if len(dims) != 3:
+            raise ValueError(f'Pallet {index}: usa medidas como 40*48*62, en pulgadas.')
+        dims = [number(x, 'medidas', True) for x in dims]
+        cube = dims[0]*dims[1]*dims[2]/1728
+        items = raw.get('items')
+        if not isinstance(items, list) or not 1 <= len(items) <= 14:
+            raise ValueError(f'Pallet {index}: agrega entre 1 y 14 productos.')
+        parsed = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ValueError('Revisa la lista de productos.')
+            sku = text(item.get('sku'), 'ITEM', 40)
+            qty = number(item.get('qty'), 'piezas', True)
+            if not qty.is_integer():
+                raise ValueError('La cantidad de piezas debe ser entera.')
+            parsed.append((sku, qty, None))
+        boxes = number(raw.get('boxes'), f'cajas del pallet {index}', True)
+        if not boxes.is_integer():
+            raise ValueError('La cantidad de cajas debe ser entera.')
+        pallets.append(dict(destination=destination, po=po, size='*'.join(f'{x:g}' for x in dims),
+                            cube=cube, weight=number(raw.get('weight'), f'peso del pallet {index}', True),
+                            boxes=boxes, items=parsed))
     return pallets
 
 
 def make_pdf(pallets):
+    """Carta, una página por copia; posiciones basadas en Formato.pdf."""
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     output = BytesIO()
-    styles = getSampleStyleSheet()
-    body = styles['BodyText']; body.fontSize = 12; body.leading = 16
-    heading = styles['Heading1']; heading.fontSize = 22
-    def p(text, style=body):
-        return Paragraph(xml_escape(str(text)).replace('\n', '<br/>'), style)
-    story = []
+    pdf = canvas.Canvas(output, pagesize=letter)
+    pdf.setTitle('Hojas de Pallet')
+    def label(x, top, value, size=18, width=510, center=False):
+        value = str(value)
+        actual = min(size, size * width / max(stringWidth(value, 'Helvetica-Bold', size), 1))
+        pdf.setFont('Helvetica-Bold', actual)
+        if center:
+            pdf.drawCentredString(x, 792-top, value)
+        else:
+            pdf.drawString(x, 792-top, value)
     for index, pallet in enumerate(pallets, 1):
-        if len(pallet['items']) > 14:
-            raise ValueError('Un pallet tiene más de 14 productos; necesita un formato ampliado antes de imprimir.')
-        for copy in range(4):
-            if story:
-                story.append(PageBreak())
-            story += [p('From:  ' + os.environ.get('SENDER_PHONE', '')),
-                      p(os.environ.get('SENDER_NAME', 'Remitente')),
-                      p(os.environ.get('SENDER_ADDRESS', '')),
-                      p(os.environ.get('SENDER_CITY', '')), Spacer(1, 22), p('SHIP TO:', heading),
-                      p(pallet['destination']), Spacer(1, 18)]
-            cube = pallet['cube']
-            if not isinstance(cube, (int, float)):
-                dims = re.split(r'[*xX×]', pallet['size'])
-                if len(dims) != 3:
-                    raise ValueError('No se pudieron leer las medidas del pallet.')
-                try:
-                    cube = float(dims[0])*float(dims[1])*float(dims[2])/1728
-                except ValueError:
-                    raise ValueError('Las medidas deben ser tres números, por ejemplo 40*48*84.')
-            rows = [['Size', 'Cube Ft3', 'Weight (LB)'], [pallet['size'], f'{cube:.1f}', str(pallet['weight'] or '')]]
-            summary = Table(rows, colWidths=[168]*3)
-            summary.setStyle(TableStyle([('GRID',(0,0),(-1,-1),1,colors.black),('FONTSIZE',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),9)]))
-            story += [summary, Spacer(1, 16), p('PO #  ' + pallet['po']), Spacer(1, 8)]
-            rows = [[p('ITEM#'),p('PCS'),p('BOXES')]]
-            for item, qty, boxes in pallet['items']:
-                rows.append([p(item.replace(' ', '')),p(f'{qty:g}'),p('' if boxes is None else f'{boxes:g}')])
-            table = Table(rows, colWidths=[310,90,104])
-            table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LINEBELOW',(0,0),(-1,0),1,colors.black)]))
-            story += [table, Spacer(1, 14), p(f'PALLET {index:02d} OF {len(pallets):02d}', heading),
-                      p(f"PIECES PER PALLET: {sum(i[1] for i in pallet['items']):g}"),
-                      p('DO NOT BREAK DOWN PALLET &'), p('DO NOT STACK ON TOP OF PALLET'),
-                      p(f"{pallet['boxes']:g} BOXES", heading)]
-    SimpleDocTemplate(output, pagesize=letter, rightMargin=54, leftMargin=54, topMargin=30, bottomMargin=30).build(story)
+        items = pallet['items']
+        if len(items) > 14:
+            raise ValueError('El máximo es 14 productos por pallet.')
+        for _ in range(4):
+            label(54.4, 73, 'From:')
+            label(310.7, 73, os.environ.get('SENDER_PHONE', ''), width=245)
+            for top, name in [(100,'SENDER_NAME'),(127,'SENDER_ADDRESS'),(153,'SENDER_CITY')]:
+                label(54.4, top, os.environ.get(name, ''))
+            label(54.4, 191, 'SHIP TO:')
+            pdf.line(54.4, 598, 142, 598)
+            destination = pallet['destination'].splitlines()
+            label(166, 191, destination[0], 16.2, 390)
+            for row, line in enumerate(destination[1:]):
+                label(54.4, 218+row*26.6, line)
+            for x, title, value in [(107.5,'Size',pallet['size']),(235.4,'Cube Ft3',f"{pallet['cube']:.1f}"),(384.3,'Weight (LB)',f"{pallet['weight']:g}")]:
+                label(x, 334, title, width=160, center=True)
+                label(x, 361, value, width=160, center=True)
+            label(107.4, 413, 'PO #  '+pallet['po'], width=440)
+            # Dos productos mantienen exactamente el espacio del ejemplo;
+            # listas largas reducen el interlineado y desplazan el pie.
+            step = min(26.6, 160/max(len(items)-1, 1))
+            font = 18 if len(items) <= 8 else 13
+            label(54.4, 440, 'ITEM#', font, 90)
+            for row, (sku, qty, _) in enumerate(items):
+                top = 440+row*step
+                label(184.4, top, sku, font, 116)
+                label(310.7, top, f'{qty:g}', font, 45)
+                label(360.8, top, 'PCS', font, 46)
+            middle = 440+(len(items)-1)*step/2
+            label(424.1, middle, f"{pallet['boxes']:g}", width=45)
+            label(474.9, middle, 'BOXES', width=85)
+            footer = max(520, 440+(len(items)-1)*step+54)
+            label(54.4, footer, f'PALLET {index:02d} OF {len(pallets):02d}')
+            label(54.4, footer+26.6, f"PIECES PER PALLET: {sum(item[1] for item in items):g}")
+            label(54.4, footer+53.2, 'DO NOT BREAK DOWN PALLET &')
+            label(54.4, footer+79.8, 'DO NOT STACK ON TOP OF PALLET')
+            label(287, footer+106.4, f"{pallet['boxes']:g} BOXES", center=True)
+            pdf.showPage()
+    pdf.save()
     return output.getvalue()
 
 
-PAGE = '''<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hojas de Pallet</title>
-<style>body{font:18px system-ui;background:#f0f4f8;color:#183247;margin:0}main{max-width:640px;margin:70px auto;padding:32px;background:white;border-radius:16px}button{background:#14664f;color:white;border:0;padding:15px 22px;border-radius:8px;font:inherit;margin-top:24px;cursor:pointer}input{display:block;margin-top:20px;max-width:100%}small{display:block;line-height:1.6;color:#526578}#status{margin-top:20px}</style>
-<main><h1>Hojas de Pallet</h1><p>Carga tu Excel de datos y descarga las hojas listas para imprimir.</p><small>Se generan 4 copias consecutivas de cada pallet, en tamaño carta. Usa un archivo con las mismas columnas que Datos.xlsx. El remitente se configura de forma privada en el servidor.</small><form id="form"><input id="file" type="file" accept=".xlsx" required><button id="button">Generar hojas para imprimir</button></form><p id="status" role="status"></p><small>Al imprimir el PDF, selecciona una sola copia: las cuatro copias ya están incluidas. Comprueba la vista previa antes de imprimir.</small></main>
-<script>form.onsubmit=async e=>{e.preventDefault();button.disabled=true;document.getElementById('status').textContent='Preparando hojas…';try{let r=await fetch('/generate',{method:'POST',body:document.getElementById('file').files[0]});if(!r.ok)throw Error(await r.text());let u=URL.createObjectURL(await r.blob()),a=document.createElement('a');a.href=u;a.download='Hojas-de-Pallet.pdf';a.click();setTimeout(()=>URL.revokeObjectURL(u),60000);document.getElementById('status').textContent='PDF generado. Revisa las hojas antes de imprimir.'}catch(e){document.getElementById('status').textContent=e.message}finally{button.disabled=false}};</script></html>'''
+PAGE = ( __import__('pathlib').Path(__file__).with_name('index.html')).read_text()
 
 
 def application(environ, start_response):
@@ -126,18 +147,18 @@ def application(environ, start_response):
     try:
         length = int(environ.get('CONTENT_LENGTH') or '0')
         if not 0 < length <= 10 * 1024 * 1024:
-            raise ValueError('Selecciona un Excel de hasta 10 MB.')
+            raise ValueError('Los datos deben ocupar menos de 10 MB.')
         content = environ['wsgi.input'].read(length)
-        # Limita el tamaño descomprimido de los archivos Excel.
-        from zipfile import ZipFile
-        with ZipFile(BytesIO(content)) as archive:
-            if sum(info.file_size for info in archive.infolist()) > 50 * 1024 * 1024:
-                raise ValueError('El Excel es demasiado grande al descomprimirlo.')
-        result = make_pdf(read_pallets(content))
+        import json
+        try:
+            data = json.loads(content)
+        except (ValueError, UnicodeError):
+            raise ValueError('No se pudieron leer los datos. Revisa el formulario.')
+        result = make_pdf(validate_payload(data))
         return respond('200 OK', result, 'application/pdf',
                        [('Content-Disposition', 'attachment; filename="Hojas-de-Pallet.pdf"')])
     except Exception as exc:
-        message = str(exc) if isinstance(exc, ValueError) else 'No se pudo procesar el Excel. Comprueba que tenga el formato de Datos.xlsx.'
+        message = str(exc) if isinstance(exc, ValueError) else 'No se pudieron procesar los datos. Revisa el formulario.'
         return respond('400 Bad Request', message.encode())
 
 
