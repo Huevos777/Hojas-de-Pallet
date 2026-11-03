@@ -63,6 +63,21 @@ class AppTests(unittest.TestCase):
         self.assertEqual(pallet['boxes'], 36)
         self.assertEqual(len(pallet['box_groups']), 2)
 
+    def test_empty_boxes_automatically_share_previous_group(self):
+        data = shipment()
+        data['pallets'][0]['items'][1] = {'sku': 'SKU-B', 'qty': 18, 'boxes': ''}
+        data['pallets'][0]['items'].append({'sku': 'SKU-C', 'qty': 10})
+        pallet = validate_payload(data)[0]
+        self.assertEqual(pallet['boxes'], 18)
+        self.assertEqual(pallet['box_groups'], [{'start': 0, 'end': 2, 'boxes': 18}])
+
+    def test_new_pallet_does_not_inherit_boxes(self):
+        data = shipment()
+        data['pallets'].append({'size': '40*48*62', 'weight': 100,
+                               'items': [{'sku': 'SKU-C', 'qty': 10, 'boxes': ''}]})
+        with self.assertRaises(ValueError):
+            validate_payload(data)
+
     def test_mixed_box_groups(self):
         data = shipment()
         data['pallets'][0]['items'] += [

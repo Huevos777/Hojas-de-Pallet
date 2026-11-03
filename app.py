@@ -52,7 +52,7 @@ def validate_payload(data):
             qty = number(item.get('qty'), 'piezas', True)
             if not qty.is_integer():
                 raise ValueError('La cantidad de piezas debe ser entera.')
-            share = item.get('share', False)
+            share = item.get('share', bool(parsed) and item.get('boxes') in (None, ''))
             if not isinstance(share, bool):
                 raise ValueError('Revisa el tipo de empaque del producto.')
             if share:
@@ -94,49 +94,48 @@ def make_pdf(pallets):
         items = pallet['items']
         if len(items) > 14:
             raise ValueError('El máximo es 14 productos por pallet.')
-        for _ in range(4):
-            label(54.4, 73, 'From:')
-            label(310.7, 73, '(619) 661-5592', width=245)
-            for top, value in [(100, 'FLORAL TREASURE C/O AM WAREHOUSE'),
-                               (127, '8851 kern st suite 200'),
-                               (153, 'San Diego, CA, 92154')]:
-                label(54.4, top, value)
-            label(54.4, 191, 'SHIP TO:')
-            pdf.line(54.4, 598, 142, 598)
-            destination = pallet['destination'].splitlines()
-            label(166, 191, destination[0], 16.2, 390)
-            for row, line in enumerate(destination[1:]):
-                label(54.4, 218+row*26.6, line)
-            for x, title, value in [(107.5,'Size',pallet['size']),(235.4,'Cube Ft3',f"{pallet['cube']:.1f}"),(384.3,'Weight (LB)',f"{pallet['weight']:g}")]:
-                label(x, 334, title, width=160, center=True)
-                label(x, 361, value, width=160, center=True)
-            label(107.4, 413, 'PO #  '+pallet['po'], width=440)
-            # Dos productos mantienen exactamente el espacio del ejemplo;
-            # listas largas reducen el interlineado y desplazan el pie.
-            step = min(26.6, 160/max(len(items)-1, 1))
-            font = 18 if len(items) <= 8 else 13
-            label(54.4, 440, 'ITEM#', font, 90)
-            for row, (sku, qty, _) in enumerate(items):
-                top = 440+row*step
-                label(184.4, top, sku, font, 116)
-                label(310.7, top, f'{qty:g}', font, 45)
-                label(360.8, top, 'PCS', font, 46)
-            for group in pallet['box_groups']:
-                middle = 440+(group['start']+group['end'])*step/2
-                label(424.1, middle, f"{group['boxes']:g}", font, width=45)
-                label(474.9, middle, 'BOXES', font, width=85)
-                if group['end'] > group['start']:
-                    top, bottom = 440+group['start']*step-12, 440+group['end']*step+3
-                    pdf.line(414, 792-top, 414, 792-bottom)
-                    pdf.line(410, 792-top, 414, 792-top)
-                    pdf.line(410, 792-bottom, 414, 792-bottom)
-            footer = max(520, 440+(len(items)-1)*step+54)
-            label(54.4, footer, f'PALLET {index:02d} OF {len(pallets):02d}')
-            label(54.4, footer+26.6, f"PIECES PER PALLET: {sum(item[1] for item in items):g}")
-            label(54.4, footer+53.2, 'DO NOT BREAK DOWN PALLET &')
-            label(54.4, footer+79.8, 'DO NOT STACK ON TOP OF PALLET')
-            label(287, footer+106.4, f"{pallet['boxes']:g} BOXES", center=True)
-            pdf.showPage()
+        label(54.4, 73, 'From:')
+        label(310.7, 73, '(619) 661-5592', width=245)
+        for top, value in [(100, 'FLORAL TREASURE C/O AM WAREHOUSE'),
+                           (127, '8851 kern st suite 200'),
+                           (153, 'San Diego, CA, 92154')]:
+            label(54.4, top, value)
+        label(54.4, 191, 'SHIP TO:')
+        pdf.line(54.4, 598, 142, 598)
+        destination = pallet['destination'].splitlines()
+        label(166, 191, destination[0], 16.2, 390)
+        for row, line in enumerate(destination[1:]):
+            label(54.4, 218+row*26.6, line)
+        for x, title, value in [(107.5,'Size',pallet['size']),(235.4,'Cube Ft3',f"{pallet['cube']:.1f}"),(384.3,'Weight (LB)',f"{pallet['weight']:g}")]:
+            label(x, 334, title, width=160, center=True)
+            label(x, 361, value, width=160, center=True)
+        label(107.4, 413, 'PO #  '+pallet['po'], width=440)
+        # Dos productos mantienen exactamente el espacio del ejemplo;
+        # listas largas reducen el interlineado y desplazan el pie.
+        step = min(26.6, 160/max(len(items)-1, 1))
+        font = 18 if len(items) <= 8 else 13
+        label(54.4, 440, 'ITEM#', font, 90)
+        for row, (sku, qty, _) in enumerate(items):
+            top = 440+row*step
+            label(184.4, top, sku, font, 116)
+            label(310.7, top, f'{qty:g}', font, 45)
+            label(360.8, top, 'PCS', font, 46)
+        for group in pallet['box_groups']:
+            middle = 440+(group['start']+group['end'])*step/2
+            label(424.1, middle, f"{group['boxes']:g}", font, width=45)
+            label(474.9, middle, 'BOXES', font, width=85)
+            if group['end'] > group['start']:
+                top, bottom = 440+group['start']*step-12, 440+group['end']*step+3
+                pdf.line(414, 792-top, 414, 792-bottom)
+                pdf.line(410, 792-top, 414, 792-top)
+                pdf.line(410, 792-bottom, 414, 792-bottom)
+        footer = max(520, 440+(len(items)-1)*step+54)
+        label(54.4, footer, f'PALLET {index:02d} OF {len(pallets):02d}')
+        label(54.4, footer+26.6, f"PIECES PER PALLET: {sum(item[1] for item in items):g}")
+        label(54.4, footer+53.2, 'DO NOT BREAK DOWN PALLET &')
+        label(54.4, footer+79.8, 'DO NOT STACK ON TOP OF PALLET')
+        label(287, footer+106.4, f"{pallet['boxes']:g} BOXES", center=True)
+        pdf.showPage()
     pdf.save()
     return output.getvalue()
 
