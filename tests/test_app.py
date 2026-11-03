@@ -10,7 +10,7 @@ from app import application, validate_payload, make_pdf
 def shipment():
     return {'po': 'TEST-1', 'destination': 'Destino\nDC 1\nCalle\nCiudad', 'pallets': [
         {'size': '40*48*62', 'weight': '142', 'boxes': '18',
-         'items': [{'sku': 'SKU-A', 'qty': '36'}, {'sku': 'SKU-B', 'qty': '18'}]}]}
+         'items': [{'sku': 'SKU-A', 'qty': '36', 'boxes': '18'}, {'sku': 'SKU-B', 'qty': '18', 'share': True}]}]}
 
 
 class AppTests(unittest.TestCase):
@@ -50,7 +50,35 @@ class AppTests(unittest.TestCase):
 
     def test_reject_missing_weight_and_boxes(self):
         for key in ['weight', 'boxes']:
-            data = shipment(); data['pallets'][0][key] = ''
+            data = shipment()
+            target = data['pallets'][0] if key == 'weight' else data['pallets'][0]['items'][0]
+            target[key] = ''
+            with self.assertRaises(ValueError):
+                validate_payload(data)
+
+    def test_separate_boxes_are_counted_separately(self):
+        data = shipment()
+        data['pallets'][0]['items'][1].update(share=False, boxes=18)
+        pallet = validate_payload(data)[0]
+        self.assertEqual(pallet['boxes'], 36)
+        self.assertEqual(len(pallet['box_groups']), 2)
+
+    def test_mixed_box_groups(self):
+        data = shipment()
+        data['pallets'][0]['items'] += [
+            {'sku': 'OWN', 'qty': 5, 'boxes': 5},
+            {'sku': 'GROUP-2', 'qty': 2, 'boxes': 1},
+            {'sku': 'SHARED-2', 'qty': 3, 'share': True}]
+        pallet = validate_payload(data)[0]
+        self.assertEqual(pallet['boxes'], 24)
+        self.assertEqual([(g['start'], g['end']) for g in pallet['box_groups']], [(0, 1), (2, 2), (3, 4)])
+
+    def test_shared_boxes_cannot_be_first_or_repeat_count(self):
+        for item_index in [0, 1]:
+            data = shipment()
+            data['pallets'][0]['items'][item_index].update(share=True, boxes='')
+            if item_index == 1:
+                data['pallets'][0]['items'][1]['boxes'] = 18
             with self.assertRaises(ValueError):
                 validate_payload(data)
 

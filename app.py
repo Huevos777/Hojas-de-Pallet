@@ -44,6 +44,7 @@ def validate_payload(data):
         if not isinstance(items, list) or not 1 <= len(items) <= 14:
             raise ValueError(f'Pallet {index}: agrega entre 1 y 14 productos.')
         parsed = []
+        box_groups = []
         for item in items:
             if not isinstance(item, dict):
                 raise ValueError('Revisa la lista de productos.')
@@ -51,13 +52,26 @@ def validate_payload(data):
             qty = number(item.get('qty'), 'piezas', True)
             if not qty.is_integer():
                 raise ValueError('La cantidad de piezas debe ser entera.')
-            parsed.append((sku, qty, None))
-        boxes = number(raw.get('boxes'), f'cajas del pallet {index}', True)
-        if not boxes.is_integer():
-            raise ValueError('La cantidad de cajas debe ser entera.')
+            share = item.get('share', False)
+            if not isinstance(share, bool):
+                raise ValueError('Revisa el tipo de empaque del producto.')
+            if share:
+                if not box_groups:
+                    raise ValueError('El primer producto debe indicar sus cajas propias.')
+                if item.get('boxes') not in (None, ''):
+                    raise ValueError('Un producto que comparte cajas no debe repetir la cantidad de cajas.')
+                box_groups[-1]['end'] = len(parsed)
+                item_boxes = None
+            else:
+                item_boxes = number(item.get('boxes'), f'cajas de {sku}', True)
+                if not item_boxes.is_integer():
+                    raise ValueError('La cantidad de cajas debe ser entera.')
+                box_groups.append(dict(start=len(parsed), end=len(parsed), boxes=item_boxes))
+            parsed.append((sku, qty, item_boxes))
+        boxes = sum(group['boxes'] for group in box_groups)
         pallets.append(dict(destination=destination, po=po, size='*'.join(f'{x:g}' for x in dims),
                             cube=cube, weight=number(raw.get('weight'), f'peso del pallet {index}', True),
-                            boxes=boxes, items=parsed))
+                            boxes=boxes, box_groups=box_groups, items=parsed))
     return pallets
 
 
@@ -107,9 +121,15 @@ def make_pdf(pallets):
                 label(184.4, top, sku, font, 116)
                 label(310.7, top, f'{qty:g}', font, 45)
                 label(360.8, top, 'PCS', font, 46)
-            middle = 440+(len(items)-1)*step/2
-            label(424.1, middle, f"{pallet['boxes']:g}", width=45)
-            label(474.9, middle, 'BOXES', width=85)
+            for group in pallet['box_groups']:
+                middle = 440+(group['start']+group['end'])*step/2
+                label(424.1, middle, f"{group['boxes']:g}", font, width=45)
+                label(474.9, middle, 'BOXES', font, width=85)
+                if group['end'] > group['start']:
+                    top, bottom = 440+group['start']*step-12, 440+group['end']*step+3
+                    pdf.line(414, 792-top, 414, 792-bottom)
+                    pdf.line(410, 792-top, 414, 792-top)
+                    pdf.line(410, 792-bottom, 414, 792-bottom)
             footer = max(520, 440+(len(items)-1)*step+54)
             label(54.4, footer, f'PALLET {index:02d} OF {len(pallets):02d}')
             label(54.4, footer+26.6, f"PIECES PER PALLET: {sum(item[1] for item in items):g}")

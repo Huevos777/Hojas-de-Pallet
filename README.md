@@ -4,13 +4,17 @@ Aplicación privada para pegar tablas o introducir manualmente productos ya sepa
 
 ## Uso
 
-1. Escribe o pega en la cuadrícula con estas nueve columnas fijas, en este orden: Ship To, PO#, ITEM, Qty Pcs, # Boxes, Pallet #, Sizes, Cube Ft3, Weight (Lbs).
-2. Selecciona la celda inicial y pega un bloque de Excel con Ctrl+V. Admite encabezados opcionales en ese mismo orden y direcciones multilínea entre comillas como las copia Excel. También puedes editar cada celda, usar Tab y Enter, y agregar filas. Shift+Enter permite varias líneas en una celda.
-3. Pulsa «Revisar pallets de esta tabla». Ship To y PO# se trasladan al envío; las filas con Pallet # vacío continúan el anterior. Las cajas de las filas se suman: no repitas un total en cada producto. No se infieren cajas a partir de piezas. Se omiten filas vacías y filas ITEM = TOTAL.
-4. Revisa o corrige cada pallet. Aplicar la tabla otra vez reemplaza la revisión previa con confirmación. Cualquier cambio en las celdas exige volver a aplicar la tabla antes de generar. También puedes agregar pallets manualmente.
-5. Confirma la revisión y descarga el PDF. Imprime una sola copia: las cuatro ya están incluidas.
+1. Completa destino (Ship To) y PO# una sola vez, en Datos del envío.
+2. Escribe o pega la tabla con siete columnas fijas: ITEM, Qty Pcs, # Boxes, Pallet #, Sizes, Cube Ft3, Weight (Lbs). Ya no se repiten Ship To y PO# en la cuadrícula.
+3. Selecciona la celda inicial y pega desde Excel con Ctrl+V. Admite encabezados opcionales, edición, Tab, Enter y filas adicionales.
+4. Pulsa «Revisar pallets de esta tabla». Las filas con Pallet # vacío continúan el anterior. Cada cantidad de # Boxes comienza un grupo de cajas propio; si está vacía, se propone compartir las del producto anterior. Revisa siempre esta propuesta.
+5. En cada producto elige **Cajas propias** o **Comparte con el anterior**. Las cajas propias se suman al total. Un producto compartido pertenece al mismo grupo que el anterior, sin volver a sumar cajas. Para un grupo de varios productos en una sola caja, escribe 1 en el primero y marca compartir en los siguientes. Si cada pieza tiene su caja, usa cajas propias e introduce tantas cajas como piezas.
+6. El total se calcula desde los grupos; no es un campo editable independiente. El PDF muestra las cajas junto a cada producto/grupo y el total al pie. Al quitar el primer producto de un grupo, el siguiente hereda las cajas del grupo.
+7. Confirma la revisión y descarga el PDF. Imprime una sola copia: las cuatro ya están incluidas.
 
-Un envío por vez (un PO y un destino). Hasta 2000 filas en la cuadrícula, 100 pallets y 14 productos por pallet. Las medidas van en pulgadas y el peso en libras. Cube Ft3 se usa cuando lo escribes; si está vacío se calcula con las tres dimensiones. Las listas largas usan texto más pequeño sin dividir la página. Los datos no se conservan al recargar la página.
+Aplicar la tabla otra vez reemplaza la revisión previa con confirmación. Los cambios en celdas exigen volver a aplicar la tabla. Puedes agregar pallets manualmente.
+
+Un envío por vez (un PO y un destino). Hasta 2000 filas, 100 pallets y 14 productos por pallet. Medidas en pulgadas y peso en libras. Cube Ft3 se usa si está escrito; si está vacío se calcula con las dimensiones. Los datos no se conservan al recargar la página.
 
 ## Desarrollo
 
