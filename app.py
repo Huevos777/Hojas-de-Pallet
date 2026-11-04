@@ -41,8 +41,8 @@ def validate_payload(data):
         if raw.get('cube') not in (None, ''):
             cube = number(raw['cube'], f'volumen del pallet {index}', True)
         items = raw.get('items')
-        if not isinstance(items, list) or not 1 <= len(items) <= 14:
-            raise ValueError(f'Pallet {index}: agrega entre 1 y 14 productos.')
+        if not isinstance(items, list) or not 1 <= len(items) <= 24:
+            raise ValueError(f'Pallet {index}: agrega entre 1 y 24 productos.')
         parsed = []
         box_groups = []
         for item in items:
@@ -92,8 +92,8 @@ def make_pdf(pallets):
             pdf.drawString(x, 792-top, value)
     for index, pallet in enumerate(pallets, 1):
         items = pallet['items']
-        if len(items) > 14:
-            raise ValueError('El máximo es 14 productos por pallet.')
+        if len(items) > 24:
+            raise ValueError('El máximo es 24 productos por pallet.')
         label(54.4, 73, 'From:')
         label(310.7, 73, '(619) 661-5592', width=245)
         for top, value in [(100, 'FLORAL TREASURE C/O AM WAREHOUSE'),
@@ -109,27 +109,28 @@ def make_pdf(pallets):
         for x, title, value in [(107.5,'Size',pallet['size']),(235.4,'Cube Ft3',f"{pallet['cube']:.1f}"),(384.3,'Weight (LB)',f"{pallet['weight']:g}")]:
             label(x, 334, title, width=160, center=True)
             label(x, 361, value, width=160, center=True)
-        label(107.4, 413, 'PO #  '+pallet['po'], width=440)
         # Dos productos mantienen exactamente el espacio del ejemplo;
         # listas largas reducen el interlineado y desplazan el pie.
-        step = min(26.6, 160/max(len(items)-1, 1))
-        font = 18 if len(items) <= 8 else 13
-        label(54.4, 440, 'ITEM#', font, 90)
+        table_top = 440 if len(items) <= 14 else 420
+        step = min(26.6, (160 if len(items) <= 14 else 210)/max(len(items)-1, 1))
+        font = min(18 if len(items) <= 8 else 13, step*.8)
+        label(107.4, table_top-27, 'PO #  '+pallet['po'], width=440)
+        label(54.4, table_top, 'ITEM#', font, 90)
         for row, (sku, qty, _) in enumerate(items):
-            top = 440+row*step
+            top = table_top+row*step
             label(184.4, top, sku, font, 116)
             label(310.7, top, f'{qty:g}', font, 45)
             label(360.8, top, 'PCS', font, 46)
         for group in pallet['box_groups']:
-            middle = 440+(group['start']+group['end'])*step/2
+            middle = table_top+(group['start']+group['end'])*step/2
             label(424.1, middle, f"{group['boxes']:g}", font, width=45)
             label(474.9, middle, 'BOXES', font, width=85)
             if group['end'] > group['start']:
-                top, bottom = 440+group['start']*step-12, 440+group['end']*step+3
+                top, bottom = table_top+group['start']*step-font, table_top+group['end']*step+3
                 pdf.line(414, 792-top, 414, 792-bottom)
                 pdf.line(410, 792-top, 414, 792-top)
                 pdf.line(410, 792-bottom, 414, 792-bottom)
-        footer = max(520, 440+(len(items)-1)*step+54)
+        footer = max(520, table_top+(len(items)-1)*step+40)
         label(54.4, footer, f'PALLET {index:02d} OF {len(pallets):02d}')
         label(54.4, footer+26.6, f"PIECES PER PALLET: {sum(item[1] for item in items):g}")
         label(54.4, footer+53.2, 'DO NOT BREAK DOWN PALLET &')
@@ -169,8 +170,8 @@ def application(environ, start_response):
         return respond('404 Not Found', b'No encontrado')
     try:
         length = int(environ.get('CONTENT_LENGTH') or '0')
-        if not 0 < length <= 10 * 1024 * 1024:
-            raise ValueError('Los datos deben ocupar menos de 10 MB.')
+        if not 0 < length <= 32 * 1024 * 1024:
+            raise ValueError('Los datos deben ocupar menos de 32 MB.')
         content = environ['wsgi.input'].read(length)
         import json
         if path == '/import-excel':
@@ -186,9 +187,10 @@ def application(environ, start_response):
             try:
                 header = int(query.get('header', ['1'])[0])
                 columns = json.loads(query['columns'][0]) if 'columns' in query else None
+                shipment = int(query['shipment'][0]) if 'shipment' in query else None
             except (ValueError, TypeError):
                 raise ValueError('Revisa la fila de títulos y las columnas seleccionadas.')
-            result = import_excel(content, selected, inspect=query.get('inspect') == ['1'], header_row=header, columns=columns)
+            result = import_excel(content, selected, inspect=query.get('inspect') == ['1'], header_row=header, columns=columns, shipment_index=shipment)
             return respond('200 OK', json.dumps(result, ensure_ascii=False).encode(), 'application/json; charset=utf-8')
         try:
             data = json.loads(content)

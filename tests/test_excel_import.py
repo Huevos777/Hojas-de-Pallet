@@ -88,6 +88,59 @@ class ExcelTests(unittest.TestCase):
     def test_invalid_file_rejected(self):
         with self.assertRaises(ValueError): import_excel(b'not an xlsx')
 
+    def shipments_book(self):
+        b = Workbook(); s = b.active
+        s.append(['PO', 'Client Order', 'customer', None, 'Item', 'Qty Pcs', '# cartons', 'Qty Pallets', 'Sizes', 'Cube Ft3', 'Weight (Lbs)'])
+        s.append([999, 'CLIENT-A', 'CUSTOMER A', 'ADDRESS A\nCITY A', 'SKU-A', 10, '=+F2', 'Pallet 1', '40*48*62', '=40*48*62/1728', 142])
+        s.append([None, None, None, None, 'SKU-B', 5, None, None, None, None, None])
+        s.append([888, 'CLIENT-B', 'CUSTOMER B', 'ADDRESS B\nCITY B', 'SKU-C', 3, 3, 'Pallet 1', '40*48*84', None, 200])
+        for col in ['A', 'B', 'C', 'D', 'H', 'I', 'J', 'K']:
+            s.merge_cells(f'{col}2:{col}3')
+        return b
+
+    def test_select_shipment_with_merged_metadata_and_restart_pallet_numbers(self):
+        b = self.shipments_book()
+        result = import_excel(content(b))
+        self.assertEqual(len(result['shipments']), 2)
+        self.assertEqual([s['po'] for s in result['shipments']], ['CLIENT-A', 'CLIENT-B'])
+        first = import_excel(content(b), 0, shipment_index=0)
+        second = import_excel(content(b), 0, shipment_index=1)
+        self.assertEqual([r[0] for r in first['rows']], ['SKU-A', 'SKU-B'])
+        self.assertEqual([r[0] for r in second['rows']], ['SKU-C'])
+        self.assertEqual(first['rows'][0][2], '10')
+        self.assertEqual(first['pallets'], 1)
+        self.assertEqual(second['pallets'], 1)
+        self.assertEqual(second['shipment']['destination'], 'ADDRESS B\nCITY B')
+        self.assertNotEqual(second['shipment']['po'], '888')
+
+    def test_repeated_po_and_blank_unmerged_client_do_not_split_shipment(self):
+        b = self.shipments_book(); s = b.active
+        for area in list(s.merged_cells.ranges): s.unmerge_cells(str(area))
+        s['B3'] = 'CLIENT-A'
+        self.assertEqual(len(import_excel(content(b))['shipments']), 2)
+
+    def test_changed_address_splits_same_client_and_po(self):
+        b = self.shipments_book(); s = b.active
+        s['B4'] = 'CLIENT-A'; s['C4'] = 'CUSTOMER A'
+        result = import_excel(content(b))
+        self.assertEqual(len(result['shipments']), 2)
+        self.assertNotEqual(result['shipments'][0]['destination'], result['shipments'][1]['destination'])
+
+    def test_invalid_unselected_shipment_does_not_block_good_one(self):
+        b = self.shipments_book(); b.active['K4'] = 'BAD'
+        self.assertEqual(import_excel(content(b), 0, shipment_index=0)['pallets'], 1)
+        with self.assertRaises(ValueError): import_excel(content(b), 0, shipment_index=1)
+
+    def test_aggregate_pallet_quantity_is_not_treated_as_one_pallet(self):
+        b = self.shipments_book(); b.active['H4'] = '2 Pallets'
+        with self.assertRaisesRegex(ValueError, 'varios pallets'):
+            import_excel(content(b), 0, shipment_index=1)
+
+    def test_direct_formula_cycle_is_rejected(self):
+        b = self.shipments_book(); b.active['G2'] = '=G2'
+        with self.assertRaisesRegex(ValueError, 'circular'):
+            import_excel(content(b), 0, shipment_index=0)
+
     def test_import_endpoint_requires_authentication(self):
         from app import application
         status = []

@@ -10,11 +10,11 @@ Aplicación privada para pegar tablas o introducir manualmente productos ya sepa
 4. Pulsa «Descargar hojas de pallet». No hay revisión por pallet ni casilla de confirmación. Los datos se procesan directamente desde la tabla; los errores se indican sin generar un PDF incompleto.
 5. El PDF contiene una sola página por pallet. Selecciona cuatro copias al imprimir y desactiva «Intercalar» para obtener cuatro hojas juntas por pallet.
 
-Un envío por vez (un PO y un destino). Hasta 2000 filas, 100 pallets y 14 productos por pallet. Medidas en pulgadas y peso en libras. Cube Ft3 se usa si está escrito; si está vacío se calcula con las dimensiones. Los datos no se conservan al recargar la página.
+Un envío por vez (un PO y un destino). Hasta 2000 filas, 100 pallets y 24 productos por pallet. Medidas en pulgadas y peso en libras. Cube Ft3 se usa si está escrito; si está vacío se calcula con las dimensiones. Los datos no se conservan al recargar la página.
 
 ## Importar Excel
 
-También puedes elegir un archivo `.xlsx` desde la sección de productos. La importación llena la misma cuadrícula editable: no modifica PO# ni destino, aunque el Excel contenga esas columnas. Si ya hay productos, pide confirmación antes de reemplazarlos; un error deja intacta la tabla.
+También puedes elegir un archivo `.xlsx` desde la sección de productos. La importación llena la misma cuadrícula editable. En archivos simples, no modifica PO# ni destino. Si detecta varios envíos, ofrece elegir uno y usar opcionalmente su PO y dirección. Si ya hay productos, pide confirmación antes de reemplazarlos; un error deja intacta la tabla.
 
 - Se identifican las columnas por títulos, no por posición. Se admiten los encabezados actuales y variantes explícitas como SKU, Piezas, Cajas y Peso (Lbs). Las demás columnas se ignoran.
 - Deben existir ITEM, Qty Pcs, # Boxes, Pallet #, Sizes y Weight (Lbs). Cube Ft3 es opcional. Los encabezados deben estar en las primeras 50 filas y 100 columnas. Si un encabezado es desconocido o está duplicado, se abre una vista previa para elegir las columnas manualmente.
@@ -22,12 +22,23 @@ También puedes elegir un archivo `.xlsx` desde la sección de productos. La imp
 
 - Si varias hojas visibles contienen tablas compatibles, se elige una. No se mezclan envíos ni hojas automáticamente.
 - Se respetan celdas combinadas verticalmente en cajas, pallet, medidas, volumen y peso. No se permiten combinaciones en ITEM/piezas ni combinaciones entre columnas de datos.
-- Las fórmulas de Cube se omiten y se recalcula el volumen con Sizes. Las fórmulas de los demás campos deben convertirse a valores en Excel; no se confía en resultados almacenados potencialmente antiguos.
+- Las fórmulas de Cube se omiten y se recalcula el volumen con Sizes. Se evalúan las referencias directas a celdas numéricas de la misma hoja (por ejemplo `=+F37` en cajas), con detección de ciclos. Las demás fórmulas deben convertirse a valores en Excel; no se confía en resultados almacenados potencialmente antiguos.
 - Se omiten filas vacías y totales explícitos en ITEM. Se rechazan datos incompletos, errores de Excel y medidas/pesos contradictorios del mismo pallet.
 - Se mantienen los ceros iniciales de códigos guardados como texto o con formato numérico compuesto solo por ceros (por ejemplo `000000`). No se reconstruyen ceros que ya se hayan perdido en el archivo.
-- Solo `.xlsx` sin contraseña, hasta 10 MB comprimidos y 50 MB descomprimidos, con hasta 2000 filas después del encabezado. Los archivos antiguos `.xls` deben guardarse como `.xlsx`.
+- Solo `.xlsx` sin contraseña, hasta 32 MB comprimidos y 120 MB descomprimidos, con hasta 2000 filas después del encabezado. Los archivos antiguos `.xls` deben guardarse como `.xlsx`.
 
 El archivo se procesa en memoria y no se conserva. Las validaciones reducen errores de interpretación; no comprueban que los datos del documento correspondan físicamente al envío.
+
+## Excel con varios envíos
+
+- Reconoce `Client Order` / `Cliente Order` como el PO del cliente. Nunca usa la columna `PO` interna para rellenar el PO impreso. `carton` / `cartons` equivalen a cajas; `pallets` / `Qty Pallets` equivalen al identificador de pallet; `Pallet Size` equivale a medidas.
+- Después de elegir una hoja, muestra los envíos separados por Client Order, cliente y dirección, respetando las celdas combinadas. Una dirección sin título se propone únicamente si está justo después de customer y contiene varias líneas; se muestra para confirmar al elegir el envío.
+- Elige un envío y pulsa **Cargar solo este envío**. Los productos de clientes diferentes no se mezclan aunque ambos tengan Pallet 1.
+- La casilla para usar PO y dirección del envío puede desactivarse para conservar los datos manuales. Si está activa, los campos ausentes se vacían para que el usuario los complete y no se reutilice por error una dirección anterior.
+- **Elegir otro envío de este Excel** permite trabajar el siguiente cliente sin volver a subir el archivo. No se guarda el Excel en el servidor; cada operación lo envía desde el navegador.
+- Las hojas se leen de forma diferida y solo se materializa la elegida (hasta 2000 filas). Así no se cargan completas las hojas históricas grandes ni las imágenes del libro.
+- Registros con medidas `BOX` o datos incompletos no generan hojas de pallet hasta completarse. Un texto como `2 Pallets` que resume varios pallets requiere desglosar el reparto: no se divide automáticamente.
+- El formato PDF admite hasta 24 productos por pallet; las listas de más de 14 usan una zona de productos ampliada y letra menor.
 
 ## Desarrollo
 

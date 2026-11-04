@@ -1,4 +1,4 @@
-"""Importación conservadora: encabezados explícitos, sin leer PO ni destino."""
+"""Importación conservadora con selección de hoja, columnas y envío."""
 from io import BytesIO
 import re
 import unicodedata
@@ -10,9 +10,9 @@ TITLES = ['ITEM', 'Qty Pcs', '# Boxes', 'Pallet #', 'Sizes', 'Cube Ft3', 'Weight
 ALIASES = [
     ['item', 'item#', 'sku', 'producto', 'codigo'],
     ['qty pcs', 'qty', 'pcs', 'piezas', 'cantidad'],
-    ['# boxes', 'boxes', 'cajas'],
-    ['pallet #', 'pallet', 'pallet number', 'tarima'],
-    ['sizes', 'size', 'medidas'],
+    ['# boxes', 'boxes', 'cajas', 'carton', 'cartons', '# cartons'],
+    ['pallet #', 'pallet', 'pallet number', 'tarima', 'pallets', 'qty pallets'],
+    ['sizes', 'size', 'medidas', 'pallet size'],
     ['cube ft3', 'cube', 'volumen ft3'],
     ['weight (lbs)', 'weight (lb)', 'peso lbs', 'peso lb'],
 ]
@@ -23,13 +23,13 @@ def normalized(value):
     return re.sub(r'[^a-z0-9]', '', value)
 
 
-def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, columns=None):
+def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, columns=None, shipment_index=None):
     try:
         with ZipFile(BytesIO(content)) as archive:
             infos = archive.infolist()
-            if len(infos) > 3000 or sum(i.file_size for i in infos) > 50*1024*1024:
+            if len(infos) > 3000 or sum(i.file_size for i in infos) > 120*1024*1024:
                 raise ValueError('El Excel es demasiado grande. Usa un archivo con solo los datos del envío.')
-        book = openpyxl.load_workbook(BytesIO(content), data_only=False)
+        book = openpyxl.load_workbook(BytesIO(content), data_only=False, read_only=True)
     except ValueError:
         raise
     except Exception:
@@ -70,8 +70,9 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
             header = header_row
         else:
             candidates = []
+            ambiguous = set()
             for index, sheet in enumerate(book):
-                if sheet.sheet_state != 'visible':
+                if sheet.sheet_state != 'visible' or (sheet_index is not None and index != sheet_index):
                     continue
                 matches = []
                 for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 50), max_col=min(sheet.max_column, 100)):
@@ -86,10 +87,10 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
                                     mapping[field] = cell.column
                     if all(mapping.get(k) for k in [0, 1, 2, 3, 4, 6]):
                         if 5 in mapping and mapping[5] is None:
-                            raise ValueError(f'Hoja {sheet.title}: hay dos columnas de volumen. Deja solo una.')
+                            continue
                         matches.append((row[0].row, mapping))
                 if len(matches) > 1:
-                    raise ValueError(f'Hoja {sheet.title}: encontré varias tablas. Deja una sola tabla por hoja.')
+                    ambiguous.add(index)
                 if matches:
                     candidates.append((index, sheet, *matches[0]))
             if not candidates:
@@ -100,18 +101,101 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
             selected = candidates[0] if sheet_index is None else next((c for c in candidates if c[0] == sheet_index), None)
             if selected is None:
                 raise ValueError('Selecciona una hoja válida del archivo.')
+            if selected[0] in ambiguous:
+                return preview()
             _, sheet, header, mapping = selected
         if sheet.max_row-header > 2000:
             raise ValueError('La hoja supera 2000 filas. Copia los datos necesarios a un Excel más pequeño.')
+        # Solo materializamos la hoja elegida: otras hojas pueden contener miles de filas.
+        from xml.etree.ElementTree import iterparse
+        chosen_index = book.worksheets.index(sheet)
+        fresh = openpyxl.Workbook()
+        materialized = fresh.active
+        materialized.title = sheet.title
+        for source_row in sheet.iter_rows(max_row=sheet.max_row, max_col=min(sheet.max_column, 100)):
+            for cell in source_row:
+                if cell.value is not None:
+                    target = materialized.cell(cell.row, cell.column, cell.value)
+                    target.number_format = cell.number_format
+                    target.data_type = cell.data_type
+        with ZipFile(BytesIO(content)) as archive:
+            with archive.open(sheet._worksheet_path) as xml:
+                for _, element in iterparse(xml, events=['end']):
+                    if element.tag.endswith('}mergeCell'):
+                        materialized.merge_cells(element.attrib['ref'])
+                    element.clear()
+        sheet = materialized
+        def value_at(row, col):
+            cell = sheet.cell(row, col)
+            if cell.value is None:
+                for area in sheet.merged_cells.ranges:
+                    if area.min_row <= row <= area.max_row and area.min_col <= col <= area.max_col:
+                        cell = sheet.cell(area.min_row, area.min_col)
+                        break
+            if cell.data_type in ('f', 'e'):
+                raise ValueError(f'{cell.coordinate}: el cliente, PO o dirección no puede contener fórmulas ni errores.')
+            value = cell.value
+            return '' if value is None else str(int(value) if isinstance(value, float) and value.is_integer() else value).strip()
+        header_cells = list(sheet.iter_rows(min_row=header, max_row=header, max_col=min(sheet.max_column,100)))[0]
+        def metadata_column(aliases):
+            matches = [c.column for c in header_cells if normalized(c.value) in aliases]
+            if len(matches) > 1:
+                raise ValueError('Hay columnas de envío duplicadas. Deja un solo Client Order, cliente y dirección.')
+            return matches[0] if matches else None
+        po_col = metadata_column(['clientorder', 'clienteorder', 'clientpo', 'customerpo', 'ordendelcliente'])
+        client_col = metadata_column(['customer', 'cliente', 'client', 'nombre del cliente'.replace(' ', '')])
+        address_col = metadata_column(['shippingaddress', 'shipto', 'direccion', 'direcciondeenvio', 'destination'])
+        if not address_col and client_col:
+            # Solo propone una columna sin título que contenga direcciones multilínea.
+            nearby = client_col+1
+            if nearby not in mapping.values() and not sheet.cell(header, nearby).value:
+                if any(len(value_at(r, nearby).splitlines()) >= 2 for r in range(header+1, min(sheet.max_row,header+30)+1)):
+                    address_col = nearby
+        shipments = []
+        if po_col or client_col:
+            active = None
+            lookup = {}
+            for r in range(header+1, sheet.max_row+1):
+                sku = sheet.cell(r, mapping[0]).value
+                if sku is None or normalized(sku) in ('total','totales','grandtotal'):
+                    continue
+                meta = (value_at(r, po_col) if po_col else '', value_at(r, client_col) if client_col else '', value_at(r, address_col) if address_col else '')
+                if any(meta):
+                    # No arrastrar una dirección a un pedido nuevo si está ausente.
+                    if active is None or any(value and value != active['key'][i] for i, value in enumerate(meta)):
+                        if meta not in lookup:
+                            active = dict(key=meta, rows=[], po=meta[0], customer=meta[1], destination=meta[2])
+                            lookup[meta] = active
+                            shipments.append(active)
+                        else:
+                            active = lookup[meta]
+                if active is None:
+                    active = dict(key=('', '', ''), rows=[], po='', customer='', destination='')
+                    shipments.append(active)
+                active['rows'].append(r)
+            if shipments and shipment_index is None:
+                return dict(shipments=[dict(index=i, po=p['po'], customer=p['customer'], destination=p['destination'], products=len(p['rows'])) for i,p in enumerate(shipments)], selected_sheet=chosen_index,
+                            header_row=header, columns=[mapping.get(k) for k in range(7)])
+            if shipment_index is not None:
+                if type(shipment_index) is not int or not 0 <= shipment_index < len(shipments):
+                    raise ValueError('Selecciona un envío válido.')
+                selected_shipment = shipments[shipment_index]
+            else:
+                selected_shipment = None
+        else:
+            if shipment_index is not None:
+                raise ValueError('La hoja no contiene envíos separados para seleccionar.')
+            selected_shipment = None
+        selected_rows = set(selected_shipment['rows']) if selected_shipment else set(range(header+1, sheet.max_row+1))
         for area in sheet.merged_cells.ranges:
-            if area.max_row <= header:
+            if not any(area.min_row <= r <= area.max_row for r in selected_rows):
                 continue
             if area.max_col > area.min_col and any(area.min_col <= c <= area.max_col for c in mapping.values()):
                 raise ValueError('Hay celdas combinadas entre columnas de datos. Separa esas columnas antes de importar.')
             if area.max_row > area.min_row and any(mapping[k] == area.min_col for k in [0, 1]):
                 raise ValueError('ITEM o Qty Pcs contiene celdas combinadas. Cada producto debe tener su propia fila y cantidad.')
         rows = []
-        for r in range(header+1, sheet.max_row+1):
+        for r in sorted(selected_rows):
             source = [sheet.cell(r, mapping[k]) if k in mapping else None for k in range(7)]
             if normalized(source[0].value) in ['total', 'totales', 'grandtotal']:
                 continue
@@ -123,8 +207,21 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
                     row.append(''); continue
                 if cell.data_type == 'f':
                     if k == 5:
-                        row.append(''); continue  # Se calcula con Sizes, no se usa caché de Excel.
-                    raise ValueError(f'Fila {r}, {TITLES[k]}: hay una fórmula. En Excel, copia y pega como valores antes de importar.')
+                        row.append(''); continue
+                    # Evalúa únicamente copias directas de celdas numéricas de esta hoja.
+                    seen = set()
+                    reference = cell
+                    while reference.data_type == 'f':
+                        if reference.coordinate in seen:
+                            raise ValueError(f'Fila {r}: fórmula circular.')
+                        seen.add(reference.coordinate)
+                        match = re.fullmatch(r'=\+?\s*(\$?[A-Z]{1,3}\$?[1-9][0-9]*)\s*', reference.value, re.I)
+                        if not match:
+                            raise ValueError(f'Fila {r}, {TITLES[k]}: fórmula no compatible. En Excel pega esa columna como valores.')
+                        reference = sheet[match[1].replace('$','')]
+                    if not isinstance(reference.value, (int, float)) or isinstance(reference.value, bool):
+                        raise ValueError(f'Fila {r}: la fórmula no apunta a una cantidad numérica.')
+                    cell = reference
                 if cell.data_type == 'e' or isinstance(cell.value, bool):
                     raise ValueError(f'Fila {r}, {TITLES[k]}: contiene un error o un valor no válido.')
                 value = cell.value
@@ -136,6 +233,8 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
                 row.append(str(value).strip())
             if not row[0]:
                 raise ValueError(f'Fila {r}: falta ITEM. Cada fila con datos debe tener un producto.')
+            if re.fullmatch(r'(?:[2-9]|[1-9][0-9]+)\s+pallets?', row[3], re.I):
+                raise ValueError(f'Fila {r}: «{row[3]}» indica varios pallets juntos. Separa sus productos por pallet antes de importar; no se puede adivinar el reparto.')
             rows.append(row)
         if not rows:
             raise ValueError('La hoja no contiene productos debajo de los títulos.')
@@ -156,6 +255,9 @@ def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, colu
                     p[field] = row[col]
             p['items'].append(dict(sku=row[0], qty=row[1], boxes=row[2]))
         validate_payload(dict(po='validacion', destination='validacion', pallets=list(groups.values())))
-        return {'rows': rows, 'sheet': sheet.title, 'pallets': len(groups)}
+        result = {'rows': rows, 'sheet': sheet.title, 'pallets': len(groups)}
+        if selected_shipment:
+            result['shipment'] = {k: selected_shipment[k] for k in ['po', 'customer', 'destination']}
+        return result
     finally:
         book.close()

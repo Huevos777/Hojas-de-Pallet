@@ -98,7 +98,7 @@ class AppTests(unittest.TestCase):
                 validate_payload(data)
 
     def test_limit_products(self):
-        data = shipment(); data['pallets'][0]['items'] *= 8
+        data = shipment(); data['pallets'][0]['items'] *= 16
         with self.assertRaises(ValueError):
             validate_payload(data)
 
