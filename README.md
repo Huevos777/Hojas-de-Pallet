@@ -17,7 +17,9 @@ Un envío por vez (un PO y un destino). Hasta 2000 filas, 100 pallets y 14 produ
 También puedes elegir un archivo `.xlsx` desde la sección de productos. La importación llena la misma cuadrícula editable: no modifica PO# ni destino, aunque el Excel contenga esas columnas. Si ya hay productos, pide confirmación antes de reemplazarlos; un error deja intacta la tabla.
 
 - Se identifican las columnas por títulos, no por posición. Se admiten los encabezados actuales y variantes explícitas como SKU, Piezas, Cajas y Peso (Lbs). Las demás columnas se ignoran.
-- Deben existir ITEM, Qty Pcs, # Boxes, Pallet #, Sizes y Weight (Lbs). Cube Ft3 es opcional. Los encabezados deben estar en las primeras 50 filas y 100 columnas. Un encabezado requerido duplicado o desconocido impide importar.
+- Deben existir ITEM, Qty Pcs, # Boxes, Pallet #, Sizes y Weight (Lbs). Cube Ft3 es opcional. Los encabezados deben estar en las primeras 50 filas y 100 columnas. Si un encabezado es desconocido o está duplicado, se abre una vista previa para elegir las columnas manualmente.
+- Cuando los títulos cambian, el panel permite elegir hoja, fila de títulos (1–50) y columna para cada dato. «Ver columnas de esta fila» actualiza la muestra; «Importar con estas columnas» valida y carga los productos. No se permite usar una columna dos veces ni omitir datos obligatorios. Cube Ft3 puede calcularse. «Elegir columnas del Excel» abre este modo incluso en archivos reconocidos. Comprueba que las columnas elegidas usan pulgadas y libras: no se convierten otras unidades automáticamente.
+
 - Si varias hojas visibles contienen tablas compatibles, se elige una. No se mezclan envíos ni hojas automáticamente.
 - Se respetan celdas combinadas verticalmente en cajas, pallet, medidas, volumen y peso. No se permiten combinaciones en ITEM/piezas ni combinaciones entre columnas de datos.
 - Las fórmulas de Cube se omiten y se recalcula el volumen con Sizes. Las fórmulas de los demás campos deben convertirse a valores en Excel; no se confía en resultados almacenados potencialmente antiguos.

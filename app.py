@@ -176,13 +176,19 @@ def application(environ, start_response):
         if path == '/import-excel':
             from urllib.parse import parse_qs
             from excel_import import import_excel
-            selected = parse_qs(environ.get('QUERY_STRING', '')).get('sheet', [None])[0]
+            query = parse_qs(environ.get('QUERY_STRING', ''))
+            selected = query.get('sheet', [None])[0]
             if selected is not None:
                 try:
                     selected = int(selected)
                 except ValueError:
                     raise ValueError('Selecciona una hoja válida del archivo.')
-            result = import_excel(content, selected)
+            try:
+                header = int(query.get('header', ['1'])[0])
+                columns = json.loads(query['columns'][0]) if 'columns' in query else None
+            except (ValueError, TypeError):
+                raise ValueError('Revisa la fila de títulos y las columnas seleccionadas.')
+            result = import_excel(content, selected, inspect=query.get('inspect') == ['1'], header_row=header, columns=columns)
             return respond('200 OK', json.dumps(result, ensure_ascii=False).encode(), 'application/json; charset=utf-8')
         try:
             data = json.loads(content)

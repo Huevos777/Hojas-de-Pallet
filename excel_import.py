@@ -23,7 +23,7 @@ def normalized(value):
     return re.sub(r'[^a-z0-9]', '', value)
 
 
-def import_excel(content, sheet_index=None):
+def import_excel(content, sheet_index=None, *, inspect=False, header_row=1, columns=None):
     try:
         with ZipFile(BytesIO(content)) as archive:
             infos = archive.infolist()
@@ -35,38 +35,72 @@ def import_excel(content, sheet_index=None):
     except Exception:
         raise ValueError('No pude abrir el archivo. Usa un Excel .xlsx sin contraseña.')
     try:
-        candidates = []
-        for index, sheet in enumerate(book):
-            if sheet.sheet_state != 'visible':
-                continue
-            matches = []
-            for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 50), max_col=min(sheet.max_column, 100)):
-                mapping = {}
-                for cell in row:
-                    key = normalized(cell.value)
-                    for field, aliases in enumerate(ALIASES):
-                        if key and key in [normalized(a) for a in aliases]:
-                            if field in mapping:
-                                mapping[field] = None
-                            else:
-                                mapping[field] = cell.column
-                if all(mapping.get(k) for k in [0, 1, 2, 3, 4, 6]):
-                    if 5 in mapping and mapping[5] is None:
-                        raise ValueError(f'Hoja {sheet.title}: hay dos columnas de volumen. Deja solo una.')
-                    matches.append((row[0].row, mapping))
-            if len(matches) > 1:
-                raise ValueError(f'Hoja {sheet.title}: encontré varias tablas. Deja una sola tabla por hoja.')
-            if matches:
-                candidates.append((index, sheet, *matches[0]))
-        if not candidates:
-            raise ValueError('No encontré una tabla con ITEM, Qty Pcs, # Boxes, Pallet #, Sizes y Weight (Lbs). Revisa los títulos. Cube Ft3 es opcional. Los títulos deben estar en las primeras 50 filas.')
-        choices = [{'index': i, 'name': s.title} for i, s, _, _ in candidates]
-        if sheet_index is None and len(candidates) > 1:
-            return {'sheets': choices}
-        selected = candidates[0] if sheet_index is None else next((c for c in candidates if c[0] == sheet_index), None)
-        if selected is None:
-            raise ValueError('Selecciona una hoja válida del archivo.')
-        _, sheet, header, mapping = selected
+        visible = [(i, sheet) for i, sheet in enumerate(book) if sheet.sheet_state == 'visible']
+        def preview():
+            selected = next(((i, s) for i, s in visible if i == sheet_index), None) if sheet_index is not None else (visible[0] if visible else None)
+            if selected is None:
+                raise ValueError('Selecciona una hoja visible válida.')
+            i, sheet = selected
+            if not isinstance(header_row, int) or not 1 <= header_row <= min(sheet.max_row, 50):
+                raise ValueError('La fila de títulos debe estar entre 1 y 50 y existir en la hoja.')
+            width = min(sheet.max_column, 100)
+            titles = [str(sheet.cell(header_row, c).value or '')[:200] for c in range(1, width+1)]
+            samples = [[str(sheet.cell(r, c).value or '')[:200] for c in range(1, width+1)]
+                       for r in range(header_row+1, min(sheet.max_row, header_row+4)+1)]
+            suggestions = []
+            for aliases in ALIASES:
+                matches = [c+1 for c, title in enumerate(titles) if normalized(title) in [normalized(a) for a in aliases]]
+                suggestions.append(matches[0] if len(matches) == 1 else None)
+            return dict(needs_mapping=True, sheets=[dict(index=i, name=s.title) for i, s in visible],
+                        selected_sheet=i, header_row=header_row, headers=titles, samples=samples, suggestions=suggestions)
+        if inspect:
+            return preview()
+        if columns is not None:
+            info = preview()
+            if not isinstance(columns, list) or len(columns) != 7:
+                raise ValueError('Selecciona las columnas de la tabla.')
+            if any(c is not None and (type(c) is not int or not 1 <= c <= len(info['headers'])) for c in columns):
+                raise ValueError('Una columna seleccionada no existe.')
+            mapping = {k: c for k, c in enumerate(columns) if c is not None}
+            if not all(k in mapping for k in [0, 1, 2, 3, 4, 6]):
+                raise ValueError('Selecciona todas las columnas obligatorias. Solo Cube Ft3 puede omitirse.')
+            if len(set(mapping.values())) != len(mapping):
+                raise ValueError('Cada columna de Excel debe usarse una sola vez.')
+            sheet = book.worksheets[info['selected_sheet']]
+            header = header_row
+        else:
+            candidates = []
+            for index, sheet in enumerate(book):
+                if sheet.sheet_state != 'visible':
+                    continue
+                matches = []
+                for row in sheet.iter_rows(min_row=1, max_row=min(sheet.max_row, 50), max_col=min(sheet.max_column, 100)):
+                    mapping = {}
+                    for cell in row:
+                        key = normalized(cell.value)
+                        for field, aliases in enumerate(ALIASES):
+                            if key and key in [normalized(a) for a in aliases]:
+                                if field in mapping:
+                                    mapping[field] = None
+                                else:
+                                    mapping[field] = cell.column
+                    if all(mapping.get(k) for k in [0, 1, 2, 3, 4, 6]):
+                        if 5 in mapping and mapping[5] is None:
+                            raise ValueError(f'Hoja {sheet.title}: hay dos columnas de volumen. Deja solo una.')
+                        matches.append((row[0].row, mapping))
+                if len(matches) > 1:
+                    raise ValueError(f'Hoja {sheet.title}: encontré varias tablas. Deja una sola tabla por hoja.')
+                if matches:
+                    candidates.append((index, sheet, *matches[0]))
+            if not candidates:
+                return preview()
+            choices = [{'index': i, 'name': s.title} for i, s, _, _ in candidates]
+            if sheet_index is None and len(candidates) > 1:
+                return {'sheets': choices}
+            selected = candidates[0] if sheet_index is None else next((c for c in candidates if c[0] == sheet_index), None)
+            if selected is None:
+                raise ValueError('Selecciona una hoja válida del archivo.')
+            _, sheet, header, mapping = selected
         if sheet.max_row-header > 2000:
             raise ValueError('La hoja supera 2000 filas. Copia los datos necesarios a un Excel más pequeño.')
         for area in sheet.merged_cells.ranges:

@@ -42,14 +42,27 @@ class ExcelTests(unittest.TestCase):
         self.assertEqual(len(import_excel(content(b))['sheets']), 2)
         self.assertEqual(import_excel(content(b), 1)['pallets'], 1)
 
-    def test_missing_or_duplicate_headers_rejected(self):
+    def test_unknown_or_duplicate_headers_request_mapping(self):
         for duplicate in [False, True]:
             b = workbook(); s = b.active
             if duplicate:
                 s['H1'] = 'Qty Pcs'
             else:
                 s['B1'] = 'dato desconocido'
-            with self.assertRaises(ValueError): import_excel(content(b))
+            self.assertTrue(import_excel(content(b))['needs_mapping'])
+
+    def test_manual_mapping_with_arbitrary_titles(self):
+        b = workbook(); s = b.active
+        for c in range(1, 8): s.cell(1, c).value = f'Titulo distinto {c}'
+        info = import_excel(content(b)); self.assertTrue(info['needs_mapping'])
+        result = import_excel(content(b), 0, header_row=1, columns=[1, 2, 3, 4, 5, None, 7])
+        self.assertEqual(result['pallets'], 1)
+        self.assertEqual(result['rows'][0][0], 'A')
+
+    def test_manual_mapping_rejects_reused_and_invalid_columns(self):
+        for columns in [[1, 1, 3, 4, 5, None, 7], [1, 2, 3, 4, 5, None, 100], [1, None, 3, 4, 5, None, 7]]:
+            with self.assertRaises(ValueError):
+                import_excel(content(workbook()), 0, columns=columns)
 
     def test_formula_quantities_rejected(self):
         b = workbook(); b.active['B2'] = '=18*2'
