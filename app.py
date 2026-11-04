@@ -165,7 +165,7 @@ def application(environ, start_response):
     path, method = environ.get('PATH_INFO'), environ['REQUEST_METHOD']
     if path == '/' and method == 'GET':
         return respond('200 OK', PAGE.encode(), 'text/html; charset=utf-8')
-    if path != '/generate' or method != 'POST':
+    if path not in ('/generate', '/import-excel') or method != 'POST':
         return respond('404 Not Found', b'No encontrado')
     try:
         length = int(environ.get('CONTENT_LENGTH') or '0')
@@ -173,6 +173,17 @@ def application(environ, start_response):
             raise ValueError('Los datos deben ocupar menos de 10 MB.')
         content = environ['wsgi.input'].read(length)
         import json
+        if path == '/import-excel':
+            from urllib.parse import parse_qs
+            from excel_import import import_excel
+            selected = parse_qs(environ.get('QUERY_STRING', '')).get('sheet', [None])[0]
+            if selected is not None:
+                try:
+                    selected = int(selected)
+                except ValueError:
+                    raise ValueError('Selecciona una hoja válida del archivo.')
+            result = import_excel(content, selected)
+            return respond('200 OK', json.dumps(result, ensure_ascii=False).encode(), 'application/json; charset=utf-8')
         try:
             data = json.loads(content)
         except (ValueError, UnicodeError):

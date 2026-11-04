@@ -12,6 +12,21 @@ Aplicación privada para pegar tablas o introducir manualmente productos ya sepa
 
 Un envío por vez (un PO y un destino). Hasta 2000 filas, 100 pallets y 14 productos por pallet. Medidas en pulgadas y peso en libras. Cube Ft3 se usa si está escrito; si está vacío se calcula con las dimensiones. Los datos no se conservan al recargar la página.
 
+## Importar Excel
+
+También puedes elegir un archivo `.xlsx` desde la sección de productos. La importación llena la misma cuadrícula editable: no modifica PO# ni destino, aunque el Excel contenga esas columnas. Si ya hay productos, pide confirmación antes de reemplazarlos; un error deja intacta la tabla.
+
+- Se identifican las columnas por títulos, no por posición. Se admiten los encabezados actuales y variantes explícitas como SKU, Piezas, Cajas y Peso (Lbs). Las demás columnas se ignoran.
+- Deben existir ITEM, Qty Pcs, # Boxes, Pallet #, Sizes y Weight (Lbs). Cube Ft3 es opcional. Los encabezados deben estar en las primeras 50 filas y 100 columnas. Un encabezado requerido duplicado o desconocido impide importar.
+- Si varias hojas visibles contienen tablas compatibles, se elige una. No se mezclan envíos ni hojas automáticamente.
+- Se respetan celdas combinadas verticalmente en cajas, pallet, medidas, volumen y peso. No se permiten combinaciones en ITEM/piezas ni combinaciones entre columnas de datos.
+- Las fórmulas de Cube se omiten y se recalcula el volumen con Sizes. Las fórmulas de los demás campos deben convertirse a valores en Excel; no se confía en resultados almacenados potencialmente antiguos.
+- Se omiten filas vacías y totales explícitos en ITEM. Se rechazan datos incompletos, errores de Excel y medidas/pesos contradictorios del mismo pallet.
+- Se mantienen los ceros iniciales de códigos guardados como texto o con formato numérico compuesto solo por ceros (por ejemplo `000000`). No se reconstruyen ceros que ya se hayan perdido en el archivo.
+- Solo `.xlsx` sin contraseña, hasta 10 MB comprimidos y 50 MB descomprimidos, con hasta 2000 filas después del encabezado. Los archivos antiguos `.xls` deben guardarse como `.xlsx`.
+
+El archivo se procesa en memoria y no se conserva. Las validaciones reducen errores de interpretación; no comprueban que los datos del documento correspondan físicamente al envío.
+
 ## Desarrollo
 
 Python 3.12:
